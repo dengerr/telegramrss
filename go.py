@@ -30,13 +30,15 @@ one_post_channels = [
     "dengmetr",
     "ohmypy",
     "ovcharovcorporation",
+    "pensiya35",
+    "topapopa",
 ]
 
 news_channels = [
     "varlamov_news",
-    "academeg_true_original",
-    "polzaSKIDKI",
-    "vandroukiru",
+    # "academeg_true_original",
+    # "polzaSKIDKI",
+    # "vandroukiru",
 ]
 
 all_channels = one_post_channels + news_channels
