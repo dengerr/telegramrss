@@ -23,19 +23,19 @@ api_hash = cfg.get("telegram", "api_hash")
 tz_hours = int(cfg.get("telegram", "tz_hours"))
 
 one_post_channels = [
-    "economikal",
-    "ctodaily",
-    "pmdaily",
+    # "economikal",
+    # "ctodaily",
+    # "pmdaily",
     "crimsondigest",
-    "dengmetr",
-    "ohmypy",
-    "ovcharovcorporation",
-    "pensiya35",
-    "topapopa",
+    # "dengmetr",
+    # "ohmypy",
+    # "ovcharovcorporation",
+    # "pensiya35",
+    # "topapopa",
 ]
 
 news_channels = [
-    "varlamov_news",
+    # "varlamov_news",
     # "academeg_true_original",
     # "polzaSKIDKI",
     # "vandroukiru",
@@ -169,7 +169,7 @@ def dump_channel(name):
         if min_id := db.get("max_id"):
             kwargs["min_id"] = min_id
         chats = client.get_messages(name, 5000, **kwargs)
-        # print(name, len(chats), chats.total)
+        print(name, len(chats), chats.total)
         max_id = None
 
         if len(chats):
@@ -190,7 +190,7 @@ def dump_channel(name):
             if max_id is not None:
                 db["max_id"] = max_id
 
-        # print(db["max_id"])
+        print(db["max_id"])
 
         return [x.id for x in chats]
 
@@ -222,7 +222,7 @@ def md_from_shelve(name, ids=None, group_by_day=False):
                 output.write("\n\n")
 
 
-def print_from_shelve(name, ids, short=False):
+def print_from_shelve(name, ids, short=False, maxi=None):
     mkdir('md', name)
     with shelve.open(f"db/{name}.shelve") as db:
         chats = [db[str(_id)] for _id in ids if str(_id) in db]
@@ -247,6 +247,11 @@ def print_from_shelve(name, ids, short=False):
 
             print(chat['message'])
             print("\n")
+            if entities := chat.get('entities'):
+                for entity in entities:
+                    print(entity['_'], chat['message'][entity['offset']:entity['offset']+entity['length']])
+                    if url := entity.get('url'):
+                        print(url)
 
 
 def md_all():
@@ -269,6 +274,15 @@ def dump_all():
 def print_one(name, _id):
     with shelve.open(f"db/{name}.shelve") as db:
         pprint(db.get(str(_id)))
+
+
+def print_last(name, count=3):
+    print(name)
+    with shelve.open(f"db/{name}.shelve") as db:
+        max_id = db.get("max_id")
+    assert isinstance(max_id, int)
+    ids = list(range(max_id - count, max_id + 1))
+    print_from_shelve(name, ids, short=False)
 
 
 def save_path(name, path):
@@ -303,3 +317,7 @@ if __name__ == "__main__":
 
         if "download" in sys.argv:
             download(*sys.argv[-2:])
+
+        if "print_last" in sys.argv:
+            for name in sys.argv[2:]:
+                print_last(name)
