@@ -1,0 +1,7 @@
+/*.md
+/*.txt
+__pycache__
+config.ini
+*.session
+/db
+/md
