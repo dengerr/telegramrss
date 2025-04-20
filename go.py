@@ -1,4 +1,6 @@
 #!/bin/python
+import asyncio
+from contextlib import asynccontextmanager
 import datetime
 import markdown
 import os
@@ -11,6 +13,8 @@ from configparser import ConfigParser
 
 from telethon import TelegramClient
 from telethon.types import Message
+
+from telegram_storage import TelegramChannelStorage
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_path, "config.ini")
@@ -73,7 +77,7 @@ def mkdir(*names):
 
 def md_posts(name, count):
     mkdir('md', name)
-    chats = client.get_messages(name, count)
+    chats = client.iter_messages(name, count)
     for chat in chats:
         if not chat.message:
             continue
@@ -86,75 +90,14 @@ def md_posts(name, count):
             output.write("\n\n")
 
 
-def dump_channel(name, download_media=False):
-    with shelve.open(f"db/{name}.shelve") as db:
-        kwargs = {}
-        if min_id := db.get("max_id"):
-            kwargs["min_id"] = min_id
-        chats = client.get_messages(name, 5000, **kwargs)
-        print(name, len(chats), chats.total)
-        max_id = None
-
-        if len(chats):
-            for x in chats:
-                if max_id is None:
-                    max_id = x.id
-
-                data = x.to_dict()
-                if download_media and x.photo:
-                    if path := x.download_media():
-                        data['photo_local_path'] = save_path(name, path)
-                if media := data.get('media'):
-                    if webpage := media.get('webpage'):
-                        if webpage.get('type') == 'photo' and 'url' in webpage:
-                            data['photo_webpage_path'] = webpage['url']
-                db[str(x.id)] = data
-
-            if max_id is not None:
-                db["max_id"] = max_id
-
-        print(db["max_id"])
-
-        return [x.id for x in chats]
-
-
-def download_all(name):
-    with shelve.open(f"db/{name}.shelve") as db:
-        max_id = db["max_id"]
-        for i in range(int(max_id)):
-            if str(i) not in db:
-                continue
-            chat = db[str(i)]
-            if 'photo_local_path' in chat:
-                continue
-            if (chat.get('media') or {}).get('photo'):
-                chats = client.get_messages(name, limit=1, max_id=i+1)
-                for x in chats:
-                    x: Message
-                    if path := x.download_media():
-                        chat['photo_local_path'] = save_path(name, path)
-                        db[str(i)] = chat
-                        print('saved', x.id)
-
-
-def chats_from_shelve_generator(name, ids=None, last_count=None):
-    with shelve.open(f"db/{name}.shelve") as db:
-        if not ids:
-            ids = list(range(int(db["max_id"])))
-            if last_count is not None:
-                ids = ids[-last_count:]
-        chats = [db[str(_id)] for _id in ids if str(_id) in db]
-
-        for chat in chats:
-            if chat.get('message'):
-                yield chat
 
 
 def md_from_shelve(name, ids=None, group_by_day=False, one_html_file=False):
     mkdir('md', name)
     result = []
     header = None
-    for chat in chats_from_shelve_generator(name, ids):
+    storage = TelegramChannelStorage(name)
+    for chat in storage.chats_from_shelve_generator(ids):
         local_time = chat['date'] + datetime.timedelta(hours=tz_hours)
         # print(local_time.strftime("%Y-%m-%d %H-%M.md"))
         if not one_html_file:
@@ -249,9 +192,10 @@ def md_all():
     md_posts("crimsondigest", 20)
 
 
-def dump_all():
+async def dump_all():
     for name in all_channels:
-        ids = dump_channel(name)
+        storage = TelegramChannelStorage(name)
+        ids = await storage.dump_channel(client)
         if ids:
             print(f"## {name}")
             print_from_shelve(name, ids, short=True)
@@ -283,13 +227,13 @@ def download(name, _id):
         # no download for this channels
         return
 
-    chat = client.get_messages(name, 1, ids=int(_id))
+    chat = client.iter_messages(name, 1, ids=int(_id))
 
     if chat.photo:
         return save_path(name, chat.download_media())
 
 
-def parse_file(filename, client):
+async def parse_file(filename, client):
     variables = {}
     names = []
     with open(filename, 'r', encoding='utf8') as fp:
@@ -304,12 +248,16 @@ def parse_file(filename, client):
     if not cmd:
         return
     options = variables
+
     if options.get('update') == 'true':
         for name in names:
-            ids = dump_channel(name)
+            storage = TelegramChannelStorage(name)
+            ids = await storage.dump_channel(client)
+
     for name in names:
+        storage = TelegramChannelStorage(name)
         if cmd == 'update':
-            ids = dump_channel(name)
+            ids = await storage.dump_channel(client)
             # if ids:
             #     print(f"## {name}")
             #     print_from_shelve(name, ids, short=True)
@@ -326,7 +274,7 @@ def parse_file(filename, client):
             download(name, options['id'])
         elif cmd == "download_all":
             print(f'download all from {name}')
-            download_all(name)
+            await storage.download_all(client)
         elif cmd == "print_last":
             try:
                 count = int(options.get('count', 1))
@@ -335,17 +283,27 @@ def parse_file(filename, client):
             print_last(name, count)
 
 
+@asynccontextmanager
+async def get_telegram_client() -> TelegramClient:
+    async with TelegramClient("my", api_id, api_hash) as client:
+        yield client
+
+
+async def run(files):
+    have_txt = [1 for file in files if '.txt' in file]
+    if have_txt:
+        async with get_telegram_client() as client:
+            client: TelegramClient
+            for filename in files:
+                await parse_file(filename, client)
+    else:
+        args = tuple(files)
+        match args:
+            case 'book', name:
+                md_from_shelve(name, one_html_file=True)
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         py_filename, *files = sys.argv
-        have_txt = [1 for file in files if '.txt' in file]
-        if have_txt:
-            with TelegramClient("my", api_id, api_hash).start() as client:
-                client: TelegramClient
-                for filename in files:
-                    parse_file(filename, client)
-        else:
-            args = tuple(files)
-            match args:
-                case 'book', name:
-                    md_from_shelve(name, one_html_file=True)
+        asyncio.run(run(files))

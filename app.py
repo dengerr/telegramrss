@@ -21,14 +21,16 @@ from pydantic import BaseModel
 
 from go import (
     cfg,
-    chats_from_shelve_generator,
     format_chat_message_as_md,
     tz_hours,
+    get_telegram_client,
 )
+from telegram_storage import TelegramChannelStorage
 
 app = FastAPI()
 app.mount("/vault", StaticFiles(directory="md/vault"), name="vault")
 IMG_PREFIX = cfg.get('http', 'prefix')
+rss_items_count = int(cfg.get('http', 'rss_items_count'))
 
 
 class RSSFeed(BaseModel):
@@ -81,7 +83,11 @@ def create_telegram_md(chat):
 @app.get("/rss/{name}")
 async def get_rss_feed(name):
     items = []
-    for chat in chats_from_shelve_generator(name, last_count=10):
+    storage = TelegramChannelStorage(name)
+    # await update_channel_last(storage, last_count=rss_items_count)
+    async with get_telegram_client() as client:
+        await storage.dump_channel(client=client, last_count=rss_items_count, download_media=True)
+    for chat in storage.chats_from_shelve_generator(last_count=rss_items_count):
         local_time = chat['date'] + datetime.timedelta(hours=tz_hours)
         link = f"https://t.me/{name}/{chat['id']}"
         md = create_telegram_md(chat)
