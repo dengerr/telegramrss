@@ -1,3 +1,2 @@
 telethon==1.39.0
-pandas==2.2.3
 black==22.1.0

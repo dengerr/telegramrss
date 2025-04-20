@@ -8,7 +8,6 @@ dependencies = [
     "fastapi>=0.115.12",
     "ipython>=9.1.0",
     "markdown>=3.8",
-    "pandas>=2.2.3",
     "telethon==1.39.0",
     "uvicorn>=0.34.2",
 ]
