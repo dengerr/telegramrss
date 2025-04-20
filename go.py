@@ -1,5 +1,6 @@
 #!/bin/python
 import datetime
+import markdown
 import os
 from pprint import pprint
 import shelve
@@ -8,8 +9,8 @@ import sys
 import time
 from configparser import ConfigParser
 
-from telethon import TelegramClient, sync
-import pandas as pd
+from telethon import TelegramClient
+from telethon.types import Message
 
 base_path = os.path.dirname(os.path.abspath(__file__))
 config_path = os.path.join(base_path, "config.ini")
@@ -23,90 +24,12 @@ api_hash = cfg.get("telegram", "api_hash")
 tz_hours = int(cfg.get("telegram", "tz_hours"))
 
 one_post_channels = [
-    # "economikal",
-    # "ctodaily",
-    # "pmdaily",
     "crimsondigest",
-    # "dengmetr",
-    # "ohmypy",
-    # "ovcharovcorporation",
-    # "pensiya35",
-    # "topapopa",
 ]
-
 news_channels = [
-    # "varlamov_news",
-    # "academeg_true_original",
-    # "polzaSKIDKI",
-    # "vandroukiru",
 ]
-
 all_channels = one_post_channels + news_channels
 
-# You will be asked to enter your mobile number- Enter mobile number with country code
-# Enter OTP (For OTP check Telegram inbox)
-
-
-def print_participants(group_username):
-    participants = client.get_participants(group_username)
-
-    # This code can be used to extracted upto 10k user's details
-    # Let's get first name, last name and username
-
-    firstname = []
-    lastname = []
-    username = []
-    if len(participants):
-        for x in participants:
-            print(x)
-            firstname.append(x.first_name)
-            lastname.append(x.last_name)
-            username.append(x.username)
-
-    # list to data frame conversion
-
-    data = {"first_name": firstname, "last_name": lastname, "user_name": username}
-
-    userdetails = pd.DataFrame(data)
-    print(userdetails)
-
-
-def print_chats(chats):
-    print(group_username)
-    for chat in chats:
-        print(chat.date, chat.id)
-        print(chat.message)
-        print()
-
-
-def get_data_frame(chats):
-    # Get message id, message, sender id, reply to message id, and timestamp
-    message_id = []
-    message = []
-    sender = []
-    reply_to = []
-    time = []
-    for chat in chats:
-        message_id.append(chat.id)
-        message.append(chat.message)
-        sender.append(chat.from_id)
-        reply_to.append(chat.reply_to_msg_id)
-        time.append(chat.date)
-
-    data = {
-        "message_id": message_id,
-        "message": message,
-        "sender_ID": sender,
-        "reply_to_msg_id": reply_to,
-        "time": time,
-    }
-    df = pd.DataFrame(data)
-    return df
-
-
-group_username = "buryi_private"
-# Group name can be found in group link
-# (Example group link : https://t.me/c0ban_global, group name = 'c0ban_global')
 
 
 # chats = client.get_messages(group_username, 10, min_id=28756, reverse=True)  # good
@@ -163,7 +86,7 @@ def md_posts(name, count):
             output.write("\n\n")
 
 
-def dump_channel(name):
+def dump_channel(name, download_media=False):
     with shelve.open(f"db/{name}.shelve") as db:
         kwargs = {}
         if min_id := db.get("max_id"):
@@ -178,7 +101,7 @@ def dump_channel(name):
                     max_id = x.id
 
                 data = x.to_dict()
-                if x.photo:
+                if download_media and x.photo:
                     if path := x.download_media():
                         data['photo_local_path'] = save_path(name, path)
                 if media := data.get('media'):
@@ -195,31 +118,94 @@ def dump_channel(name):
         return [x.id for x in chats]
 
 
-def md_from_shelve(name, ids=None, group_by_day=False):
-    mkdir('md', name)
+def download_all(name):
+    with shelve.open(f"db/{name}.shelve") as db:
+        max_id = db["max_id"]
+        for i in range(int(max_id)):
+            if str(i) not in db:
+                continue
+            chat = db[str(i)]
+            if 'photo_local_path' in chat:
+                continue
+            if (chat.get('media') or {}).get('photo'):
+                chats = client.get_messages(name, limit=1, max_id=i+1)
+                for x in chats:
+                    x: Message
+                    if path := x.download_media():
+                        chat['photo_local_path'] = save_path(name, path)
+                        db[str(i)] = chat
+                        print('saved', x.id)
+
+
+def chats_from_shelve_generator(name, ids=None, last_count=None):
     with shelve.open(f"db/{name}.shelve") as db:
         if not ids:
             ids = list(range(int(db["max_id"])))
+            if last_count is not None:
+                ids = ids[-last_count:]
         chats = [db[str(_id)] for _id in ids if str(_id) in db]
 
         for chat in chats:
-            # pprint(chat)
-            if not chat.get('message'):
-                continue
+            if chat.get('message'):
+                yield chat
 
-            local_time = chat['date'] + datetime.timedelta(hours=tz_hours)
-            # print(local_time.strftime("%Y-%m-%d %H-%M.md"))
+
+def md_from_shelve(name, ids=None, group_by_day=False, one_html_file=False):
+    mkdir('md', name)
+    result = []
+    header = None
+    for chat in chats_from_shelve_generator(name, ids):
+        local_time = chat['date'] + datetime.timedelta(hours=tz_hours)
+        # print(local_time.strftime("%Y-%m-%d %H-%M.md"))
+        if not one_html_file:
+            result = []
+        prev_header, header = header, local_time.strftime("%Y-%m")
+        if one_html_file and prev_header != header:
+            result.append("%s\n===\n\n" % header)
+        result.append("%s\n---\n\n" % local_time.strftime("%Y-%m-%d %H:%M"))
+
+        link = f"https://t.me/{name}/{chat['id']}"
+        result.append(f'[{link}]({link})\n')
+        result.append(f"[](tg://resolve?domain={name}&post={chat['id']})\n\n")
+
+        if path := chat.get('photo_webpage_path') or chat.get('photo_local_path'):
+            result.append(f"![]({path})\n\n")
+
+        result.append(format_chat_message_as_md(chat['message']))
+        result.append("\n\n")
+        if not one_html_file:
             with open(f"md/{name}/" + local_time.strftime("%Y-%m-%d %H-%M.md"), "w") as output:
-                output.write("%s\n\n" % local_time.strftime("%Y-%m-%d %H:%M"))
+                output.write("".join(result))
+    if one_html_file:
+        # blacklist = ('twitter', 'finance.yahooo', 'www.telegraph.co.uk',
+        # 'uk.finance.yahoo', 'www.svoboda.org', 'www.facebook.com',
+        # 'www.bbc.com', 'www.washingtonpost.com', 'pbs.twimg.com')
 
-                output.write(f"https://t.me/{name}/{chat['id']}\n")
-                output.write(f"[](tg://resolve?domain={name}&post={chat['id']})\n\n")
+        md = "".join(result)
+        md = md.replace('#', 'SHARP')
+        output = markdown.markdown(md)
+        output = output.replace('SHARP', '#')
 
-                if path := chat.get('photo_webpage_path') or chat.get('photo_local_path'):
-                    output.write(f"![]({path})\n\n")
+        filtered_result = []
+        for line in output.split('\n'):
+            # внешние ссылки тормозят сборку epub
+            # blacklisted = [1 for domain in blacklist if f'src="https://{domain}' in line]
+            blacklisted = 'src="https://' in line
+            if not blacklisted:
+                filtered_result.append(line)
+        output = '\n'.join(filtered_result)
 
-                output.write(chat['message'])
-                output.write("\n\n")
+        with open(f'md/{name}.html', 'w') as fp:
+            fp.write(output)
+
+
+def format_chat_message_as_md(message):
+    # Двойные переводы строк надо оставить как есть,
+    # а одинарные дополнить двумя пробелами
+    message = message.replace('\n\n', 'ABZAC')
+    message = message.replace('\n', '  \n')
+    message = message.replace('ABZAC', '\n\n')
+    return message
 
 
 def print_from_shelve(name, ids, short=False, maxi=None):
@@ -241,7 +227,7 @@ def print_from_shelve(name, ids, short=False, maxi=None):
 
             print(f"https://t.me/{name}/{chat['id']}")
             print(f"[](tg://resolve?domain={name}&post={chat['id']})\n")
-            
+
             if path := chat.get('photo_webpage_path') or chat.get('photo_local_path'):
                 print(f"![]({path})\n")
 
@@ -303,21 +289,63 @@ def download(name, _id):
         return save_path(name, chat.download_media())
 
 
+def parse_file(filename, client):
+    variables = {}
+    names = []
+    with open(filename, 'r', encoding='utf8') as fp:
+        for line in fp.readlines():
+            cmd, name, *options = line.split()
+            if cmd == '=:':
+                variables[name] = ' '.join(options)
+            if cmd == '=>':
+                names.append(name)
+
+    cmd = variables.pop('action')
+    if not cmd:
+        return
+    options = variables
+    if options.get('update') == 'true':
+        for name in names:
+            ids = dump_channel(name)
+    for name in names:
+        if cmd == 'update':
+            ids = dump_channel(name)
+            # if ids:
+            #     print(f"## {name}")
+            #     print_from_shelve(name, ids, short=True)
+        elif cmd == 'md':
+            md_from_shelve(name)
+        elif cmd == 'html_book':
+            # Сделать из телеграм канала книгу html.
+            # Через sigil ее можно преобразовать в epub.
+            md_from_shelve(name, one_html_file=True)
+        elif cmd == 'print':
+            # print one post
+            print_one(name, options['id'])
+        elif cmd == "download":
+            download(name, options['id'])
+        elif cmd == "download_all":
+            print(f'download all from {name}')
+            download_all(name)
+        elif cmd == "print_last":
+            try:
+                count = int(options.get('count', 1))
+            except (TypeError, ValueError):
+                count = 1
+            print_last(name, count)
+
+
 if __name__ == "__main__":
-    with TelegramClient("my", api_id, api_hash).start() as client:
-        if "update" in sys.argv:
-            dump_all()
-
-        if "md" in sys.argv:
-            for name in all_channels:
-                md_from_shelve(name)
-
-        if "print" in sys.argv:
-            print_one(*sys.argv[-2:])
-
-        if "download" in sys.argv:
-            download(*sys.argv[-2:])
-
-        if "print_last" in sys.argv:
-            for name in sys.argv[2:]:
-                print_last(name)
+    if len(sys.argv) > 1:
+        py_filename, *files = sys.argv
+        have_txt = [1 for file in files if '.txt' in file]
+        if have_txt:
+            with TelegramClient("my", api_id, api_hash).start() as client:
+                client: TelegramClient
+                for filename in files:
+                    parse_file(filename, client)
+        else:
+            args = tuple(files)
+            match args:
+                case 'book', name:
+                    md_from_shelve(name, one_html_file=True)

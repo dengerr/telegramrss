@@ -1,0 +1,15 @@
+[project]
+name = "telegramrss"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi>=0.115.12",
+    "ipython>=9.1.0",
+    "markdown>=3.8",
+    "pandas>=2.2.3",
+    "pandoc>=2.4",
+    "telethon>=1.39.0",
+    "uvicorn>=0.34.2",
+]
