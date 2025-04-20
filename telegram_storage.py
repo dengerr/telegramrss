@@ -61,8 +61,8 @@ class TelegramChannelStorage():
 
                 data = x.to_dict()
                 if download_media and x.photo:
-                    if path := x.download_media():
-                        data['photo_local_path'] = save_path(name, path)
+                    if path := await x.download_media():
+                        data['photo_local_path'] = save_path(self.name, path)
                 if media := data.get('media'):
                     if webpage := media.get('webpage'):
                         if webpage.get('type') == 'photo' and 'url' in webpage:

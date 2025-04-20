@@ -183,15 +183,6 @@ def print_from_shelve(name, ids, short=False, maxi=None):
                         print(url)
 
 
-def md_all():
-    md_days("varlamov_news", 2)
-    md_posts("economikal", 20)
-    md_posts("dengmetr", 20)
-    md_posts("pmdaily", 20)
-    md_posts("ctodaily", 20)
-    md_posts("crimsondigest", 20)
-
-
 async def dump_all():
     for name in all_channels:
         storage = TelegramChannelStorage(name)
@@ -223,10 +214,6 @@ def save_path(name, path):
 
 
 def download(name, _id):
-    if name in "polzaSKIDKI vandroukiru varlamov_news".split():
-        # no download for this channels
-        return
-
     chat = client.iter_messages(name, 1, ids=int(_id))
 
     if chat.photo:
