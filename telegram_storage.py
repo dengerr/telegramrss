@@ -34,6 +34,11 @@ class TelegramChannelStorage():
                 if chat.get('message'):
                     yield chat
 
+    @property
+    def max_id(self):
+        with shelve.open(self.shelve_file_name) as db:
+            return int(db["max_id"])
+
     async def dump_channel(self, client: TelegramClient, last_count:int = 0, download_media=False):
         with shelve.open(self.shelve_file_name) as db:
             kwargs = {}

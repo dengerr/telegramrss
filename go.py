@@ -138,8 +138,7 @@ def md_from_shelve(name, ids=None, group_by_day=False, one_html_file=False):
                 filtered_result.append(line)
         output = '\n'.join(filtered_result)
 
-        with open(f'md/{name}.html', 'w') as fp:
-            fp.write(output)
+        return output
 
 
 def format_chat_message_as_md(message):
@@ -253,7 +252,9 @@ async def parse_file(filename, client):
         elif cmd == 'html_book':
             # Сделать из телеграм канала книгу html.
             # Через sigil ее можно преобразовать в epub.
-            md_from_shelve(name, one_html_file=True)
+            output = md_from_shelve(name, one_html_file=True)
+            with open(f'md/{name}.html', 'w') as fp:
+                fp.write(output)
         elif cmd == 'print':
             # print one post
             print_one(name, options['id'])
@@ -287,7 +288,9 @@ async def run(files):
         args = tuple(files)
         match args:
             case 'book', name:
-                md_from_shelve(name, one_html_file=True)
+                output = md_from_shelve(name, one_html_file=True)
+                with open(f'md/{name}.html', 'w') as fp:
+                    fp.write(output)
 
 
 if __name__ == "__main__":
