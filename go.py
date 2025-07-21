@@ -219,7 +219,7 @@ def download(name, _id):
         return save_path(name, chat.download_media())
 
 
-async def parse_file(filename, client):
+def parse_file(filename):
     variables = {}
     names = []
     with open(filename, 'r', encoding='utf8') as fp:
@@ -229,6 +229,11 @@ async def parse_file(filename, client):
                 variables[name] = ' '.join(options)
             if cmd == '=>':
                 names.append(name)
+    return variables, names
+
+
+async def process_file(filename, client):
+    variables, names = parse_file(filename)
 
     cmd = variables.pop('action')
     if not cmd:
@@ -283,7 +288,7 @@ async def run(files):
         async with get_telegram_client() as client:
             client: TelegramClient
             for filename in files:
-                await parse_file(filename, client)
+                await process_file(filename, client)
     else:
         args = tuple(files)
         match args:

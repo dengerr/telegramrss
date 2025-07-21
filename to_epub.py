@@ -10,7 +10,7 @@ from pathlib import Path
 from ebooklib import epub
 
 from telegram_storage import TelegramChannelStorage
-from go import format_chat_message_as_md, tz_hours
+from go import format_chat_message_as_md, tz_hours, parse_file
 
 OUTPUT_DIR = './output'
 
@@ -27,7 +27,14 @@ class TelegramToEpub:
         with shelve.open(f"db/max_id.shelve") as max_id_db:
             for name in names:
                 storage = TelegramChannelStorage(name)
-                ids = range(max_id_db[name], storage.max_id + 1)
+                if name not in max_id_db:
+                    # новый канал, считается прочитаным до текущего момента
+                    max_id_db[name] = storage.max_id
+                    print(f'Новый канал {name}')
+                    continue
+                ids = range(max_id_db[name] + 1, storage.max_id + 1)
+                if not len(ids):
+                    continue
                 output = self.html_from_shelve(name, ids)
                 if output:
                     # print(output)
@@ -35,6 +42,7 @@ class TelegramToEpub:
 
                 max_id_db[name] = storage.max_id
         if channels:
+            print('Создан epub для каналов', ', '.join(name for name, _ in channels))
             self.add_imgs_to_epub()
             self.create_epub(channels, 'Telegram digest', datetime.datetime.now().isoformat())
 
@@ -57,6 +65,11 @@ class TelegramToEpub:
             if media := chat.get('media'):
                 if media.get('video'):
                     result.append('**ВИДЕО**\n\n')
+                if document := media.get('document'):
+                    doc_names = [attr['file_name']
+                                 for attr in document.get('attributes', [])
+                                 if attr['_'] == 'DocumentAttributeFilename']
+                    result.append(f'**ПРИЛОЖЕНИЯ** {", ".join(doc_names)}\n\n')
 
             if path := chat.get('photo_local_path'):
                 self.imgs.append(f'md/{path}')
@@ -74,7 +87,7 @@ class TelegramToEpub:
                         case 'MessageEntityBold':
                             changed = f"**{inner}**"
                         case 'MessageEntityItalic':
-                            changed = f"*{inner}*"
+                            changed = f"_{inner}_"
                         case 'MessageEntityBlockquote':
                             changed = '\n'.join(f"> {line}" for line in inner.split('\n'))
                         case _:
@@ -144,5 +157,12 @@ class TelegramToEpub:
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         py_filename, *names = sys.argv
-        processor = TelegramToEpub(names)
-        processor.save()
+        have_txt = [1 for file in names if '.txt' in file]
+        if have_txt:
+            for filename in names:
+                variables, names = parse_file(filename)
+                processor = TelegramToEpub(names)
+                processor.save()
+        else:
+            processor = TelegramToEpub(names)
+            processor.save()
