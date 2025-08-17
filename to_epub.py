@@ -6,13 +6,30 @@ import shelve
 import sys
 from configparser import ConfigParser
 from pathlib import Path
+from collections import defaultdict
 
 from ebooklib import epub
 
 from telegram_storage import TelegramChannelStorage
-from go import format_chat_message_as_md, tz_hours, parse_file
+from go import (
+    format_chat_message_as_md,
+    format_chat_message_as_html,
+    tz_hours,
+    parse_file,
+)
 
 OUTPUT_DIR = './output'
+
+
+def fix_smiles(message):
+    positions = []
+    for i, char in enumerate(message):
+        if ord(char) > 100_000:
+            positions.append(i)
+    while positions:
+        pos = positions.pop()
+        message = message[:pos] + ' ' + message[pos:]
+    return message
 
 
 class TelegramToEpub:
@@ -47,7 +64,7 @@ class TelegramToEpub:
             self.create_epub(channels, 'Telegram digest', datetime.datetime.now().isoformat())
 
     def html_from_shelve(self, name, ids=None):
-        result = [f'{name}\n===\n\n']
+        result = [f'<h1>{name}</h1>\n\n']
         storage = TelegramChannelStorage(name)
         for chat in storage.chats_from_shelve_generator(ids):
             local_time = chat['date'] + datetime.timedelta(hours=tz_hours)
@@ -55,63 +72,69 @@ class TelegramToEpub:
             link = f"https://t.me/{name}/{chat['id']}"
 
             if chat.get('fwd_from'):
-                result.append(f'**ПЕРЕСЛАНО из {chat["fwd_from"]["from_name"]}**\n\n')
+                result.append(f'<p><b>ПЕРЕСЛАНО из {chat["fwd_from"]["from_name"]}</b></p>\n\n')
             if reply_to := chat.get('reply_to'):
                 # TODO откуда?
                 if reply_to.get('quote_text'):
-                    result.append(f'> {reply_to['quote_text']}\n\n')
+                    result.append(f'<blockquote>{reply_to['quote_text']}</blockquote>\n\n')
                 else:
-                    result.append(f'**ЦИТАТА** id {reply_to["reply_to_msg_id"]}\n\n')
+                    result.append(f'<p><b>ЦИТАТА</b> id {reply_to["reply_to_msg_id"]}</p>\n\n')
             if media := chat.get('media'):
                 if media.get('video'):
-                    result.append('**ВИДЕО**\n\n')
+                    result.append('<p><b>ВИДЕО</b></p>\n\n')
                 if document := media.get('document'):
                     doc_names = [attr['file_name']
                                  for attr in document.get('attributes', [])
                                  if attr['_'] == 'DocumentAttributeFilename']
-                    result.append(f'**ПРИЛОЖЕНИЯ** {", ".join(doc_names)}\n\n')
+                    result.append(f'<p><b>ПРИЛОЖЕНИЯ</b> {", ".join(doc_names)}</p>\n\n')
 
             if path := chat.get('photo_local_path'):
                 self.imgs.append(f'md/{path}')
-                result.append(f"![](md/{path})\n\n")
+                result.append(f"<p><img src='md/{path}'></p>\n\n")
             elif path := chat.get('photo_webpage_path'):
-                result.append(f"![]({path})\n\n")
+                result.append(f"<p><img src='{path}'></p>\n\n")
 
             message = chat['message']
+            message = fix_smiles(message)
+            tags_by_position = defaultdict(list)
             if entities := chat.get('entities'):
                 for entity in reversed(entities):
-                    inner = message[entity['offset']:entity['offset']+entity['length']]
+                    before = None
+                    after = None
                     match entity['_']:
                         case 'MessageEntityTextUrl':
-                            changed = f"[{inner}]({entity['url']})"
+                            before = f'<a href="{entity['url']}">'
+                            after = '</a>'
                         case 'MessageEntityBold':
-                            changed = f"**{inner}**"
+                            before = '<b>'
+                            after = '</b>'
                         case 'MessageEntityItalic':
-                            changed = f"_{inner}_"
+                            before = '<i>'
+                            after = '</i>'
                         case 'MessageEntityBlockquote':
-                            changed = '\n'.join(f"> {line}" for line in inner.split('\n'))
-                        case _:
-                            changed = inner
-                    message = ''.join((
-                        message[:entity['offset']],
-                        changed,
-                        message[entity['offset']+entity['length']:]
-                    ))
+                            before = '<blockquote>'
+                            after = '</blockquote>'
+                        # case 'MessageEntityCustomEmoji':
+                        #     message = message[:entity['offset']] + ' ' * (entity['length'] - 1) + message[entity['offset']:]
+                    if before:
+                        tags_by_position[entity['offset']].append(before)
+                    if after:
+                        tags_by_position[entity['offset'] + entity['length']].append(after)
+            for position in sorted(tags_by_position.keys(), reverse=True):
+                tags = tags_by_position[position]
+                message = message[:position] + ''.join(tags) + message[position:]
 
-            result.append(format_chat_message_as_md(message))
+            result.append('<p>' + format_chat_message_as_html(message) + '</p>')
             result.append("\n\n")
-            result.append(f"[tg](tg://resolve?domain={name}&post={chat['id']})  ")
-            result.append(f'[{name}/{chat["id"]}]({link}) {local_time.strftime("%Y-%m-%d %H:%M")}')
-            result.append("\n\n---\n\n")
+            result.append(f"<p><a href='tg://resolve?domain={name}&post={chat['id']}'>tg</a>\n")
+            result.append(f'<a href="{link}">{name}/{chat["id"]}</a> \n{local_time.strftime("%Y-%m-%d %H:%M")}')
+            result.append("\n\n<hr>\n\n")
 
         # blacklist = ('twitter', 'finance.yahooo', 'www.telegraph.co.uk',
         # 'uk.finance.yahoo', 'www.svoboda.org', 'www.facebook.com',
         # 'www.bbc.com', 'www.washingtonpost.com', 'pbs.twimg.com')
 
-        md = "".join(result)
-        md = md.replace('#', 'SHARP')
-        output = markdown.markdown(md)
-        output = output.replace('SHARP', '#')
+        output = "".join(result)
 
         filtered_result = []
         for line in output.split('\n'):

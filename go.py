@@ -150,6 +150,15 @@ def format_chat_message_as_md(message):
     return message
 
 
+def format_chat_message_as_html(message):
+    # Двойные переводы строк надо заменить на абзацы,
+    # но сначала одинарные превратить в br
+    message = message.replace('\n\n', 'ABZAC')
+    message = message.replace('\n', '<br>\n')
+    message = message.replace('ABZAC', '</p>\n\n<p>')
+    return message
+
+
 def print_from_shelve(name, ids, short=False, maxi=None):
     mkdir('md', name)
     with shelve.open(f"db/{name}.shelve") as db:
