@@ -12,7 +12,6 @@ import time
 from configparser import ConfigParser
 
 from telethon import TelegramClient
-from telethon.types import Message
 
 from telegram_storage import TelegramChannelStorage
 

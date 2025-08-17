@@ -1,10 +1,7 @@
 #!/bin/python
 import datetime
-import markdown
-from pprint import pprint
 import shelve
 import sys
-from configparser import ConfigParser
 from pathlib import Path
 from collections import defaultdict
 
@@ -12,7 +9,6 @@ from ebooklib import epub
 
 from telegram_storage import TelegramChannelStorage
 from go import (
-    format_chat_message_as_md,
     format_chat_message_as_html,
     tz_hours,
     parse_file,
@@ -41,7 +37,7 @@ class TelegramToEpub:
     def save(self):
         names = self.names
         channels = []
-        with shelve.open(f"db/max_id.shelve") as max_id_db:
+        with shelve.open("db/max_id.shelve") as max_id_db:
             for name in names:
                 storage = TelegramChannelStorage(name)
                 if name not in max_id_db:
