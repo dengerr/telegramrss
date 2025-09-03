@@ -107,6 +107,9 @@ class TelegramToEpub:
                         case 'MessageEntityItalic':
                             before = '<i>'
                             after = '</i>'
+                        case 'MessageEntityStrike':
+                            before = '<s>'
+                            after = '</s>'
                         case 'MessageEntityBlockquote':
                             before = '<blockquote>'
                             after = '</blockquote>'
