@@ -57,7 +57,7 @@ class TelegramToEpub:
         if channels:
             print('Создан epub для каналов', ', '.join(name for name, _ in channels))
             self.add_imgs_to_epub()
-            self.create_epub(channels, 'Telegram digest', datetime.datetime.now().isoformat())
+            self.create_epub(channels, 'Telegram digest', datetime.datetime.now().isoformat().replace(':', '-'))
 
     def html_from_shelve(self, name, ids=None):
         result = [f'<h1>{name}</h1>\n\n']
@@ -94,7 +94,7 @@ class TelegramToEpub:
             message = fix_smiles(message)
             tags_by_position = defaultdict(list)
             if entities := chat.get('entities'):
-                for entity in reversed(entities):
+                for entity in sorted(entities, key=lambda ent: (-ent['offset'], -ent['length'])):
                     before = None
                     after = None
                     match entity['_']:

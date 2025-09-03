@@ -95,6 +95,10 @@ class TelegramChannelStorage():
                     chats = client.iter_messages(self.name, limit=1, max_id=i+1)
                     async for x in chats:
                         x: Message
-                        if path := await x.download_media():
-                            chat['photo_local_path'] = save_path(self.name, path)
+                        try:
+                            if path := await x.download_media():
+                                chat['photo_local_path'] = save_path(self.name, path)
+                                db[str(i)] = chat
+                        except ValueError:
+                            del chat['media']['photo']
                             db[str(i)] = chat
