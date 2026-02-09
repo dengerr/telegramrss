@@ -72,6 +72,10 @@ class TelegramChannelStorage():
                     if webpage := media.get('webpage'):
                         if webpage.get('type') == 'photo' and 'url' in webpage:
                             data['photo_webpage_path'] = webpage['url']
+                if fwd_from := data.get('fwd_from'):
+                    if not fwd_from.get("from_name"):
+                        entity = await client.get_entity(fwd_from["from_id"].get("channel_id"))
+                        fwd_from["from_name"] = entity.title
                 db[str(x.id)] = data
 
             if max_id is not None:

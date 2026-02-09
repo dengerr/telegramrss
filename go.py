@@ -240,7 +240,7 @@ def parse_file(filename):
     return variables, names
 
 
-async def process_file(filename, client):
+async def process_file(filename, client: TelegramClient):
     variables, names = parse_file(filename)
 
     cmd = variables.pop('action')
