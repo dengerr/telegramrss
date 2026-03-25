@@ -1,17 +1,19 @@
 #!/bin/python
 import asyncio
-from contextlib import asynccontextmanager
 import datetime
-import markdown
 import os
-from pprint import pprint
 import shelve
 import shutil
 import sys
 import time
 from configparser import ConfigParser
+from contextlib import asynccontextmanager
+from pprint import pprint
 
+import markdown
+from socks import PROXY_TYPE_SOCKS5
 from telethon import TelegramClient
+from telethon.network import ConnectionTcpMTProxyRandomizedIntermediate
 
 from telegram_storage import TelegramChannelStorage
 
@@ -284,9 +286,31 @@ async def process_file(filename, client: TelegramClient):
             print_last(name, count)
 
 
+def get_config():
+    result_config = {}
+    if socks_addr := cfg.get("socks_proxy", "addr"):
+        result_config['proxy'] = dict(
+            proxy_type=PROXY_TYPE_SOCKS5,
+            addr=socks_addr,
+            port=int(cfg.get("socks_proxy", "port")),
+            username=cfg.get("socks_proxy", "username"),
+            password=cfg.get("socks_proxy", "password"),
+        )
+    elif mtp_addr := cfg.get('mtproto_proxy', 'addr'):
+        # возможно тут нужно использовать другой тип
+        result_config['connection'] = ConnectionTcpMTProxyRandomizedIntermediate
+        result_config['proxy'] = (
+            mtp_addr,
+            cfg.get('mtproto_proxy', 'port'),
+            cfg.get('mtproto_proxy', 'secret'),
+        )
+    return result_config
+
+
 @asynccontextmanager
 async def get_telegram_client() -> TelegramClient:
-    async with TelegramClient("my", api_id, api_hash) as client:
+    kwargs = get_config()
+    async with TelegramClient("my", api_id, api_hash, **kwargs) as client:
         yield client
 
 
