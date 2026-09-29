@@ -2,6 +2,7 @@ import os
 import shelve
 
 from telethon import TelegramClient
+from telethon import errors as telethon_errors
 
 
 def mkdir(*names):
@@ -74,7 +75,11 @@ class TelegramChannelStorage():
                             data['photo_webpage_path'] = webpage['url']
                 if fwd_from := data.get('fwd_from'):
                     if not fwd_from.get("from_name"):
-                        entity = await client.get_entity(fwd_from["from_id"].get("channel_id"))
+                        try:
+                            entity = await client.get_entity(fwd_from["from_id"].get("channel_id"))
+                        except telethon_errors.rpcerrorlist.ChannelPrivateError:
+                            print('channel', self.name, 'is private')
+                            return []
                         fwd_from["from_name"] = entity.title
                 db[str(x.id)] = data
 

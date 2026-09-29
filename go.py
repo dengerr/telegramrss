@@ -252,6 +252,7 @@ async def process_file(filename, client: TelegramClient):
 
     if options.get('update') == 'true':
         for name in names:
+            print('name', name)
             storage = TelegramChannelStorage(name)
             ids = await storage.dump_channel(client)
 
