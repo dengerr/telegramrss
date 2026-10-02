@@ -76,11 +76,15 @@ class TelegramChannelStorage():
                 if fwd_from := data.get('fwd_from'):
                     if not fwd_from.get("from_name"):
                         try:
-                            entity = await client.get_entity(fwd_from["from_id"].get("channel_id"))
+                            from_id = fwd_from["from_id"]
+                            entity = await client.get_entity(from_id.get("channel_id") or from_id.get('user_id') or from_id.get('chat_id'))
                         except telethon_errors.rpcerrorlist.ChannelPrivateError:
-                            print('channel', self.name, 'is private')
-                            return []
-                        fwd_from["from_name"] = entity.title
+                            print('channel', from_id, 'is private')
+                            continue
+                        if hasattr(entity, "title"):
+                            fwd_from["from_name"] = entity.title
+                        if hasattr(entity, "name"):
+                            fwd_from["from_name"] = entity.name
                 db[str(x.id)] = data
 
             if max_id is not None:
